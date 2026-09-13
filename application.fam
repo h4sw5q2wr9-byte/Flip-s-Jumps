@@ -1,0 +1,13 @@
+App(
+    appid="flips_jumps",
+    name="Flip's Jumps",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="flips_jumps_app",
+    stack_size=2 * 1024,
+    fap_category="Games",
+    fap_icon="images/flips_jumps_icon.png",
+    fap_author="h4sw5q2wr9-byte",
+    fap_version="1.0",
+    fap_description="Doodle Jump style endless jumper. Bounce from platform to platform and climb as high as you can.",
+    sources=["flips_jumps.c", "game.c", "draw.c"],
+)
