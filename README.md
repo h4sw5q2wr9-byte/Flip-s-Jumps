@@ -4,24 +4,31 @@ A Doodle Jump style endless jumper for the [Flipper Zero](https://flipperzero.on
 Flip bounces automatically — you only steer. Miss the platforms and it is a long
 way down.
 
+The game runs **rotated**: hold the Flipper turned a quarter turn, D-pad below the
+screen, for a tall 64x128 playfield. If it comes out upside down for the way you
+hold it, change `FLIPS_JUMPS_ORIENTATION` in `flips_jumps.h` to
+`ViewPortOrientationVerticalFlip`.
+
 ```
-        FLIP'S JUMPS
-          BEST 1284
-
-            ,--.
-           ( oo )        <- Flip, mid-hop
-            `--'
-        ##########       <- platform
-
-       PRESS OK TO JUMP
-UP:SND ON            < > MOVE
+   FLIP'S            +--------------+
+   JUMPS             |           12 |
+  BEST 1284          |  ######      |
+                     |         ____ |   <- spring: plate on a coil
+    ,--.             |        |####||
+   ( oo )            |   ,--. #####  |
+    `--'             |  ( oo )      |
+ ##########          |   `--'       |
+                     | ----------   |   <- crumbling: dotted, drops you
+  PRESS OK           |    ######    |
+  < > MOVE           +--------------+
+  UP:SND ON
 ```
 
 ## Controls
 
 | Button | Action |
 | --- | --- |
-| ← / → | Steer left and right (hold to keep moving) |
+| ← / → | Steer left and right (hold to keep moving). The firmware remaps the D-pad for the rotated screen, so these are whichever keys point left and right as you hold it. |
 | OK | Start, pause, resume, retry |
 | Back | Pause, then back to the menu |
 | Back (hold) | Quit to the app list |
@@ -36,7 +43,7 @@ The screen wraps: run off the right edge and you come back on the left.
 | `##########` | Normal | Solid. Bounces you straight back up. |
 | `#### #####` | Moving | Slides side to side. Bounces normally — if you can land on it. |
 | `----------` | Crumbling | Falls apart the moment you touch it. No bounce, so you drop through. |
-| `##########` + coil | Spring | Launches you about twice as high as a normal hop. |
+| plate on a coil | Spring | Launches you about twice as high as a normal hop, and squashes flat as it fires. |
 
 Above 150 points, bugs start drifting down the screen. Land on one from above to
 squash it for 50 points; touch it any other way and the run is over.

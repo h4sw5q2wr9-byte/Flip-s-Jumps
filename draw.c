@@ -1,5 +1,5 @@
 /*
- * Flip's Jumps - rendering onto the 128x64 monochrome canvas.
+ * Flip's Jumps - rendering onto the rotated 64x128 monochrome canvas.
  */
 #include "flips_jumps.h"
 
@@ -40,16 +40,38 @@ static void draw_player(Canvas* canvas, const Player* player, float camera_y) {
     }
 }
 
+/*
+ * A coil under a top plate, so a spring reads as a spring at a glance rather
+ * than as a normal pad with a line on it. It squashes flat when it fires.
+ */
+static void draw_spring(Canvas* canvas, int32_t x, int32_t y, bool compressed) {
+    int32_t sx = x + (PLATFORM_WIDTH - 6) / 2;
+
+    if(compressed) {
+        canvas_draw_box(canvas, sx, y - 3, 6, 2);
+        canvas_draw_box(canvas, sx, y - 1, 5, 1);
+        return;
+    }
+
+    /* Top plate. */
+    canvas_draw_box(canvas, sx, y - 7, 6, 2);
+    /* Coil: rows stepped left and right to read as a wound spring, running
+       all the way down to the pad so it does not float above it. */
+    for(int32_t i = 0; i < 5; i++) {
+        canvas_draw_box(canvas, sx + (i % 2), y - 5 + i, 5, 1);
+    }
+}
+
 static void draw_platform(Canvas* canvas, const Platform* platform, float camera_y) {
     int32_t x = (int32_t)platform->x;
     int32_t y = (int32_t)(platform->y - camera_y);
 
-    if(y < -PLATFORM_HEIGHT - 6 || y > SCREEN_HEIGHT) return;
+    if(y < -PLATFORM_HEIGHT - 10 || y > SCREEN_HEIGHT) return;
 
     if(platform->broken) {
         /* Crumbled: two halves tumbling away. */
-        canvas_draw_line(canvas, x, y, x + 6, y);
-        canvas_draw_line(canvas, x + 11, y + 1, x + PLATFORM_WIDTH - 1, y + 1);
+        canvas_draw_line(canvas, x, y, x + 5, y);
+        canvas_draw_line(canvas, x + 9, y + 1, x + PLATFORM_WIDTH - 1, y + 1);
         return;
     }
 
@@ -65,20 +87,15 @@ static void draw_platform(Canvas* canvas, const Platform* platform, float camera
     case PlatformTypeMoving:
         canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_line(canvas, x + 5, y, x + 5, y + PLATFORM_HEIGHT - 1);
-        canvas_draw_line(canvas, x + 12, y, x + 12, y + PLATFORM_HEIGHT - 1);
+        canvas_draw_line(canvas, x + 4, y, x + 4, y + PLATFORM_HEIGHT - 1);
+        canvas_draw_line(canvas, x + 10, y, x + 10, y + PLATFORM_HEIGHT - 1);
         canvas_set_color(canvas, ColorBlack);
         break;
 
-    case PlatformTypeSpring: {
+    case PlatformTypeSpring:
         canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
-        /* Coil compresses for a few frames after it launches you. */
-        int32_t height = platform->spring_frame ? 1 : 3;
-        int32_t sx = x + 7;
-        canvas_draw_line(canvas, sx + 1, y - height, sx + 1, y - 1);
-        canvas_draw_line(canvas, sx, y - height, sx + 2, y - height);
+        draw_spring(canvas, x, y, platform->spring_frame != 0);
         break;
-    }
 
     default:
         canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
@@ -143,58 +160,63 @@ static void draw_menu(Canvas* canvas, FlipsJumpsApp* app) {
     const GameWorld* world = &app->world;
     char buffer[24];
 
+    /* The title needs two lines at this width. */
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 64, 10, AlignCenter, AlignCenter, "FLIP'S JUMPS");
+    canvas_draw_str_aligned(canvas, 32, 12, AlignCenter, AlignCenter, "FLIP'S");
+    canvas_draw_str_aligned(canvas, 32, 26, AlignCenter, AlignCenter, "JUMPS");
 
     canvas_set_font(canvas, FontSecondary);
     snprintf(buffer, sizeof(buffer), "BEST %lu", (unsigned long)world->high_score);
-    canvas_draw_str_aligned(canvas, 64, 23, AlignCenter, AlignCenter, buffer);
+    canvas_draw_str_aligned(canvas, 32, 42, AlignCenter, AlignCenter, buffer);
 
     /* A demo hop over a platform, ping-ponging through a 40 frame cycle. */
     int32_t phase = (int32_t)(world->tick % 40);
     int32_t height = phase < 20 ? phase : 40 - phase;
-    canvas_draw_box(canvas, 55, 47, PLATFORM_WIDTH, PLATFORM_HEIGHT);
-    draw_player_sprite(canvas, 59, 38 - height / 2, false, false);
+    canvas_draw_box(canvas, 32 - PLATFORM_WIDTH / 2, 82, PLATFORM_WIDTH, PLATFORM_HEIGHT);
+    draw_player_sprite(canvas, 32 - PLAYER_WIDTH / 2, 72 - height, false, false);
 
     if((world->tick / 12) % 2 == 0) {
-        canvas_draw_str_aligned(canvas, 64, 57, AlignCenter, AlignCenter, "PRESS OK TO JUMP");
+        canvas_draw_str_aligned(canvas, 32, 100, AlignCenter, AlignCenter, "PRESS OK");
     }
-    canvas_draw_str(canvas, 0, 63, app->sound_on ? "UP:SND ON" : "UP:SND OFF");
-    canvas_draw_str_aligned(canvas, 128, 63, AlignRight, AlignBottom, "< > MOVE");
+    canvas_draw_str_aligned(canvas, 32, 113, AlignCenter, AlignCenter, "< > MOVE");
+    canvas_draw_str_aligned(
+        canvas, 32, 123, AlignCenter, AlignCenter, app->sound_on ? "UP:SND ON" : "UP:SND OFF");
 }
 
 static void draw_paused(Canvas* canvas) {
-    /* Wide enough that the hint line stays clear of the frame. */
-    draw_dialog(canvas, 6, 16, 116, 32);
+    draw_dialog(canvas, 2, 44, 60, 44);
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 64, 27, AlignCenter, AlignCenter, "PAUSED");
+    canvas_draw_str_aligned(canvas, 32, 58, AlignCenter, AlignCenter, "PAUSED");
     canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(canvas, 64, 40, AlignCenter, AlignCenter, "OK:RESUME BACK:MENU");
+    canvas_draw_str_aligned(canvas, 32, 72, AlignCenter, AlignCenter, "OK:RESUME");
+    canvas_draw_str_aligned(canvas, 32, 82, AlignCenter, AlignCenter, "BACK:MENU");
 }
 
 static void draw_game_over(Canvas* canvas, const GameWorld* world) {
-    char buffer[48];
+    char buffer[24];
 
-    draw_dialog(canvas, 6, 8, 116, 48);
+    draw_dialog(canvas, 2, 34, 60, 82);
 
+    /* Stacked, because "GAME OVER" on one line does not fit this width. */
     canvas_set_font(canvas, FontPrimary);
-    canvas_draw_str_aligned(canvas, 64, 20, AlignCenter, AlignCenter, "GAME OVER");
+    canvas_draw_str_aligned(canvas, 32, 48, AlignCenter, AlignCenter, "GAME");
+    canvas_draw_str_aligned(canvas, 32, 61, AlignCenter, AlignCenter, "OVER");
 
-    /* One stat per line: both on one line will not fit at any sane score. */
+    snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)world->score);
+    canvas_draw_str_aligned(canvas, 32, 76, AlignCenter, AlignCenter, buffer);
+
     canvas_set_font(canvas, FontSecondary);
-    snprintf(buffer, sizeof(buffer), "SCORE %lu", (unsigned long)world->score);
-    canvas_draw_str_aligned(canvas, 64, 32, AlignCenter, AlignCenter, buffer);
-
     if(world->new_record) {
         if((world->tick / 10) % 2 == 0) {
-            canvas_draw_str_aligned(canvas, 64, 41, AlignCenter, AlignCenter, "NEW BEST!");
+            canvas_draw_str_aligned(canvas, 32, 88, AlignCenter, AlignCenter, "NEW BEST!");
         }
     } else {
         snprintf(buffer, sizeof(buffer), "BEST %lu", (unsigned long)world->high_score);
-        canvas_draw_str_aligned(canvas, 64, 41, AlignCenter, AlignCenter, buffer);
+        canvas_draw_str_aligned(canvas, 32, 88, AlignCenter, AlignCenter, buffer);
     }
 
-    canvas_draw_str_aligned(canvas, 64, 51, AlignCenter, AlignCenter, "OK:RETRY BACK:MENU");
+    canvas_draw_str_aligned(canvas, 32, 101, AlignCenter, AlignCenter, "OK:RETRY");
+    canvas_draw_str_aligned(canvas, 32, 111, AlignCenter, AlignCenter, "BACK:MENU");
 }
 
 void game_draw(Canvas* canvas, FlipsJumpsApp* app) {

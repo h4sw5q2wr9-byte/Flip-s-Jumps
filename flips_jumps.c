@@ -15,29 +15,38 @@ typedef struct {
 
 /* ------------------------------------------------------------------ sound */
 
-void sound_stop(FlipsJumpsApp* app) {
+/*
+ * The speaker is taken once for the whole run. Acquiring it per sound blocks
+ * the game loop for milliseconds at a time, which shows up as stutter.
+ */
+static void sound_session_start(FlipsJumpsApp* app) {
+    if(!app->sound_on || app->speaker_acquired) return;
+    if(furi_hal_speaker_acquire(30)) app->speaker_acquired = true;
+}
+
+/* Silence the current note but keep the speaker for the next one. */
+static void sound_silence(FlipsJumpsApp* app) {
+    if(app->speaker_acquired) furi_hal_speaker_stop();
     app->sound_ticks = 0;
+}
+
+void sound_stop(FlipsJumpsApp* app) {
+    sound_silence(app);
     if(app->speaker_acquired) {
-        furi_hal_speaker_stop();
         furi_hal_speaker_release();
         app->speaker_acquired = false;
     }
 }
 
 void sound_play(FlipsJumpsApp* app, float frequency, uint8_t ticks) {
-    if(!app->sound_on) return;
-
-    if(!app->speaker_acquired) {
-        if(!furi_hal_speaker_acquire(10)) return;
-        app->speaker_acquired = true;
-    }
+    if(!app->sound_on || !app->speaker_acquired) return;
     furi_hal_speaker_start(frequency, 0.4f);
     app->sound_ticks = ticks;
 }
 
 static void sound_update(FlipsJumpsApp* app) {
     if(app->sound_ticks > 0 && --app->sound_ticks == 0) {
-        sound_stop(app);
+        sound_silence(app);
     }
 }
 
@@ -112,6 +121,7 @@ static void flips_jumps_timer_callback(void* context) {
 
 static void game_start(FlipsJumpsApp* app) {
     dolphin_deed(DolphinDeedPluginGameStart);
+    sound_session_start(app);
     game_reset(&app->world);
     app->world.input_dir = 0;
     app->world.left_held = false;
@@ -162,6 +172,7 @@ static void flips_jumps_handle_input(FlipsJumpsApp* app, InputEvent* input) {
         } else if(input->key == InputKeyUp) {
             app->sound_on = !app->sound_on;
             if(!app->sound_on) sound_stop(app);
+            else sound_session_start(app);
             flips_jumps_save(app);
         } else if(input->key == InputKeyBack) {
             app->running = false;
@@ -182,6 +193,7 @@ static void flips_jumps_handle_input(FlipsJumpsApp* app, InputEvent* input) {
     case GameStatePaused:
         if(input->key == InputKeyOk) {
             world->state = GameStatePlaying;
+            sound_session_start(app);
         } else if(input->key == InputKeyBack) {
             world->state = GameStateMenu;
         }
@@ -213,6 +225,7 @@ static FlipsJumpsApp* flips_jumps_app_alloc(void) {
     flips_jumps_load(app);
 
     app->view_port = view_port_alloc();
+    view_port_set_orientation(app->view_port, FLIPS_JUMPS_ORIENTATION);
     view_port_draw_callback_set(app->view_port, flips_jumps_draw_callback, app);
     view_port_input_callback_set(app->view_port, flips_jumps_input_callback, app);
 
@@ -257,15 +270,21 @@ int32_t flips_jumps_app(void* p) {
         if(furi_message_queue_get(app->queue, &event, FuriWaitForever) != FuriStatusOk) continue;
 
         furi_mutex_acquire(app->mutex, FuriWaitForever);
-        if(event.type == GameEventTypeInput) {
-            flips_jumps_handle_input(app, &event.input);
-        } else {
+        bool is_tick = (event.type == GameEventTypeTick);
+        if(is_tick) {
             game_tick(app);
             sound_update(app);
+        } else {
+            flips_jumps_handle_input(app, &event.input);
         }
         furi_mutex_release(app->mutex);
 
-        view_port_update(app->view_port);
+        /*
+         * Redraw on the frame tick only. Repainting on every button event as
+         * well races the GUI thread's flush to the display, which tears a
+         * visible line across the screen.
+         */
+        if(is_tick) view_port_update(app->view_port);
     }
 
     flips_jumps_app_free(app);

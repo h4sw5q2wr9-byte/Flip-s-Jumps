@@ -14,49 +14,57 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SCREEN_WIDTH  128
-#define SCREEN_HEIGHT 64
+/*
+ * The game runs with the viewport rotated, so the Flipper is held turned a
+ * quarter turn with the D-pad below the screen: a tall 64x128 playfield, which
+ * is the shape a climbing game wants. If it comes out upside down for the way
+ * you hold it, switch FLIPS_JUMPS_ORIENTATION to ViewPortOrientationVerticalFlip.
+ */
+#define FLIPS_JUMPS_ORIENTATION ViewPortOrientationVertical
+
+#define SCREEN_WIDTH  64
+#define SCREEN_HEIGHT 128
 
 #define PLAYER_WIDTH  9
 #define PLAYER_HEIGHT 9
 
-#define PLATFORM_WIDTH  18
+#define PLATFORM_WIDTH  15
 #define PLATFORM_HEIGHT 3
-#define PLATFORM_COUNT  10
+#define PLATFORM_COUNT  14
 
 #define ENEMY_WIDTH  11
 #define ENEMY_HEIGHT 8
 
-/* Physics. Tuned so a normal hop clears ~25px, i.e. the largest gap we spawn. */
+/* Physics. Tuned so a normal hop clears ~32px, i.e. the largest gap we spawn. */
 #define GRAVITY         0.18f
-#define JUMP_VELOCITY   -3.1f
-#define SPRING_VELOCITY -4.4f
+#define JUMP_VELOCITY   -3.4f
+#define SPRING_VELOCITY -5.0f
 #define MAX_FALL_SPEED  6.0f
-#define MOVE_ACCEL      0.70f
-#define MOVE_SPEED_MAX  3.4f
+#define MOVE_ACCEL      0.50f
+#define MOVE_SPEED_MAX  2.4f
 #define MOVE_FRICTION   0.82f
 
 /* The player never rises above this screen line; the camera scrolls instead. */
-#define CAMERA_LINE    26.0f
-#define PLAYER_START_Y 28.0f
+#define CAMERA_LINE    52.0f
+#define PLAYER_START_Y 56.0f
 
-#define MIN_GAP 11
-#define MAX_GAP 16 /* grows with difficulty, never past the jump height */
-
-/*
- * How far sideways the next platform may sit from the previous one. The whole
- * screen is only 128px wide, so fully random placement can demand a dash the
- * player has no time to make; this keeps every ladder climbable.
- */
-#define PLATFORM_MAX_X_STEP 44
+#define MIN_GAP 12
+#define MAX_GAP 18 /* grows with difficulty, never past the jump height */
 
 /*
- * The tallest hole we ever allow between two rungs, kept under the 26.7px a
- * hop actually clears so there is room to steer sideways on the way up. A
- * crumbling platform leaves its hole behind permanently, so the rungs around
- * one are placed to stay inside this budget.
+ * How far sideways the next platform may sit from the previous one. The screen
+ * wraps, so nothing is ever more than half a screen away; this just keeps the
+ * ladder from zigzagging across the full width on every rung.
  */
-#define PLATFORM_REACH 23
+#define PLATFORM_MAX_X_STEP 30
+
+/*
+ * The tallest hole we ever allow between two rungs, kept under the ~32px a hop
+ * actually clears so there is room to steer sideways on the way up. A crumbling
+ * platform leaves its hole behind permanently, so the rungs around one are
+ * placed to stay inside this budget.
+ */
+#define PLATFORM_REACH 27
 
 #define ENEMY_MIN_SCORE 150
 

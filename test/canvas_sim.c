@@ -2,9 +2,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <gui/gui.h>
+#include "flips_jumps.h"
 
-#define W 128
-#define H 64
+#define W SCREEN_WIDTH
+#define H SCREEN_HEIGHT
 unsigned char fb[H][W];
 static Color cur_color = ColorBlack;
 static Font cur_font = FontSecondary;
