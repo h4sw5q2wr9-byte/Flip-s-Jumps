@@ -107,6 +107,20 @@ typedef struct {
     bool active;
 } Enemy;
 
+/*
+ * Sound, vibration and saving all block. The tick runs under the lock the GUI
+ * thread needs to draw, so it only records what should happen and the app layer
+ * performs it once the lock is released.
+ */
+typedef struct {
+    float tone; /* Hz, 0 for nothing */
+    uint8_t tone_ticks;
+    bool silence;
+    bool vibro;
+    bool blink;
+    bool save_request;
+} Effects;
+
 typedef enum {
     GameStateMenu,
     GameStatePlaying,
@@ -133,6 +147,7 @@ typedef struct {
     int8_t input_dir; /* -1 left, 0 idle, 1 right */
     bool left_held;
     bool right_held;
+    Effects fx;
     bool last_was_fragile; /* never spawn two breakable platforms in a row */
     float last_platform_x; /* keeps consecutive platforms within reach */
     uint32_t last_gap; /* gap used by the last spawn, to budget the next one */
@@ -141,6 +156,7 @@ typedef struct {
 
 typedef struct {
     GameWorld world;
+    GameWorld render; /* snapshot the GUI thread draws from */
     Gui* gui;
     ViewPort* view_port;
     FuriMessageQueue* queue;
@@ -164,14 +180,10 @@ typedef struct {
     InputEvent input;
 } GameEvent;
 
-/* flips_jumps.c */
-void sound_play(FlipsJumpsApp* app, float frequency, uint8_t ticks);
-void sound_stop(FlipsJumpsApp* app);
-void flips_jumps_save(FlipsJumpsApp* app);
-
-/* game.c */
+/* game.c - pure simulation, no firmware calls */
+void game_seed(uint32_t seed);
 void game_reset(GameWorld* world);
-void game_tick(FlipsJumpsApp* app);
+void game_tick(GameWorld* world);
 
 /* draw.c */
-void game_draw(Canvas* canvas, FlipsJumpsApp* app);
+void game_draw(Canvas* canvas, const GameWorld* world, bool sound_on);

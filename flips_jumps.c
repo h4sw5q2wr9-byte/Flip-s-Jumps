@@ -15,6 +15,8 @@ typedef struct {
 
 /* ------------------------------------------------------------------ sound */
 
+static void flips_jumps_save(FlipsJumpsApp* app);
+
 /*
  * The speaker is taken once for the whole run. Acquiring it per sound blocks
  * the game loop for milliseconds at a time, which shows up as stutter.
@@ -30,7 +32,7 @@ static void sound_silence(FlipsJumpsApp* app) {
     app->sound_ticks = 0;
 }
 
-void sound_stop(FlipsJumpsApp* app) {
+static void sound_stop(FlipsJumpsApp* app) {
     sound_silence(app);
     if(app->speaker_acquired) {
         furi_hal_speaker_release();
@@ -38,21 +40,28 @@ void sound_stop(FlipsJumpsApp* app) {
     }
 }
 
-void sound_play(FlipsJumpsApp* app, float frequency, uint8_t ticks) {
-    if(!app->sound_on || !app->speaker_acquired) return;
-    furi_hal_speaker_start(frequency, 0.4f);
-    app->sound_ticks = ticks;
-}
+/*
+ * Perform what the tick asked for. Called after the lock is released: every
+ * call in here can block, and the GUI thread needs that lock to draw.
+ */
+static void effects_apply(FlipsJumpsApp* app, const Effects* fx) {
+    if(fx->silence) sound_silence(app);
 
-static void sound_update(FlipsJumpsApp* app) {
-    if(app->sound_ticks > 0 && --app->sound_ticks == 0) {
-        sound_silence(app);
+    if(fx->tone > 0.0f && app->sound_on && app->speaker_acquired) {
+        furi_hal_speaker_start(fx->tone, 0.4f);
+        app->sound_ticks = fx->tone_ticks;
     }
+
+    if(app->sound_ticks > 0 && --app->sound_ticks == 0) sound_silence(app);
+
+    if(fx->blink) notification_message(app->notifications, &sequence_blink_red_100);
+    if(fx->vibro) notification_message(app->notifications, &sequence_single_vibro);
+    if(fx->save_request) flips_jumps_save(app);
 }
 
 /* ------------------------------------------------------------------- save */
 
-void flips_jumps_save(FlipsJumpsApp* app) {
+static void flips_jumps_save(FlipsJumpsApp* app) {
     FlipsJumpsSave save = {
         .magic = FLIPS_JUMPS_SAVE_MAGIC,
         .version = 1,
@@ -97,9 +106,17 @@ static void flips_jumps_load(FlipsJumpsApp* app) {
 static void flips_jumps_draw_callback(Canvas* canvas, void* context) {
     FlipsJumpsApp* app = context;
 
+    /*
+     * Take a copy and get out of the way. Holding the lock for the whole
+     * render makes the GUI thread wait on game logic, and a GUI thread that
+     * is late to flush the display is a frame torn across the screen.
+     */
     furi_mutex_acquire(app->mutex, FuriWaitForever);
-    game_draw(canvas, app);
+    memcpy(&app->render, &app->world, sizeof(GameWorld));
+    bool sound_on = app->sound_on;
     furi_mutex_release(app->mutex);
+
+    game_draw(canvas, &app->render, sound_on);
 }
 
 static void flips_jumps_input_callback(InputEvent* input_event, void* context) {
@@ -217,6 +234,7 @@ static FlipsJumpsApp* flips_jumps_app_alloc(void) {
 
     app->running = true;
     app->sound_on = true;
+    game_seed(furi_hal_random_get()); /* the only hardware RNG read */
     app->world.state = GameStateMenu;
 
     app->mutex = furi_mutex_alloc(FuriMutexTypeNormal);
@@ -269,15 +287,20 @@ int32_t flips_jumps_app(void* p) {
     while(app->running) {
         if(furi_message_queue_get(app->queue, &event, FuriWaitForever) != FuriStatusOk) continue;
 
+        Effects fx = {0};
+
         furi_mutex_acquire(app->mutex, FuriWaitForever);
         bool is_tick = (event.type == GameEventTypeTick);
         if(is_tick) {
-            game_tick(app);
-            sound_update(app);
+            game_tick(&app->world);
+            fx = app->world.fx;
+            memset(&app->world.fx, 0, sizeof(Effects));
         } else {
             flips_jumps_handle_input(app, &event.input);
         }
         furi_mutex_release(app->mutex);
+
+        if(is_tick) effects_apply(app, &fx);
 
         /*
          * Redraw on the frame tick only. Repainting on every button event as

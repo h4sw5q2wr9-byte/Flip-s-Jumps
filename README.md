@@ -78,9 +78,13 @@ The simulation is plain C with no firmware dependencies, so it can be compiled
 and played on a normal machine — no Flipper and no SDK needed:
 
 ```sh
-./test/run_tests.sh             # physics, playability and generation checks
+./test/run_tests.sh             # playability, generation and renderer checks
 ./test/run_tests.sh --screens   # also dump every screen as ASCII art
 ```
+
+`game.c` is pure simulation with no firmware calls at all, which is what makes
+this possible. The tick records sound, vibration and saving as `Effects` for the
+app layer to perform; it never calls them itself.
 
 `test/bot.h` is a model of a competent player that reads the world the way a
 person reads the screen and steers with the same left/right input the game
@@ -101,3 +105,11 @@ accepts. The harness plays hundreds of full games with it and checks that:
 in-memory bitmap, so `--screens` renders the real `draw.c` output as ASCII art.
 That is how the menu, both dialogs and every sprite were checked for overflow
 and clipping without hardware.
+
+`test/render_check.c` renders every frame of 40 full games and asserts that no
+draw call ever uses a negative coordinate. The Flipper passes coordinates to
+u8g2, whose coordinate type is unsigned, so a negative value is not clipped - it
+becomes ~65535 and paints somewhere it should not. That was drawing stripes
+across the display, worst when an enemy was on screen, since enemies enter from
+above and so are drawn at negative y on the way in. Everything in `draw.c` now
+goes through the clipping helpers at the top of the file.

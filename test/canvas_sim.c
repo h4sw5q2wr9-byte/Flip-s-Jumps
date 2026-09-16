@@ -63,6 +63,23 @@ static const char* glyph(char ch) {
 
 static int advance(void) { return cur_font == FontPrimary ? 7 : 5; }
 
+/*
+ * The Flipper hands these coordinates to u8g2, whose coordinate type is
+ * UNSIGNED. A negative value does not clip - it becomes ~65535 and the
+ * primitive is drawn from there, which is how a stray stripe gets painted
+ * across the display. Record every call that would do it.
+ */
+int draw_violations = 0;
+char first_violation[256] = "";
+
+static void flag(const char* what, int32_t x, int32_t y, int32_t w, int32_t h) {
+    if(x >= 0 && y >= 0) return;
+    if(draw_violations == 0)
+        snprintf(first_violation, sizeof(first_violation),
+                 "%s(x=%d, y=%d, w=%d, h=%d)", what, (int)x, (int)y, (int)w, (int)h);
+    draw_violations++;
+}
+
 static void px(int x, int y) {
     if(x < 0 || x >= W || y < 0 || y >= H) return;
     fb[y][x] = (cur_color == ColorBlack) ? 1 : 0;
@@ -74,12 +91,14 @@ void canvas_set_font(Canvas* c, Font f) { (void)c; cur_font = f; }
 
 void canvas_draw_box(Canvas* c, int32_t x, int32_t y, int32_t w, int32_t h) {
     (void)c;
+    flag("draw_box", x, y, w, h);
     for(int32_t j = 0; j < h; j++)
         for(int32_t i = 0; i < w; i++) px(x + i, y + j);
 }
 
 void canvas_draw_rbox(Canvas* c, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r) {
     (void)c;
+    flag("draw_rbox", x, y, w, h);
     for(int32_t j = 0; j < h; j++)
         for(int32_t i = 0; i < w; i++) {
             bool corner = (i < r && j < r && i + j < r) ||
@@ -92,12 +111,14 @@ void canvas_draw_rbox(Canvas* c, int32_t x, int32_t y, int32_t w, int32_t h, int
 
 void canvas_draw_rframe(Canvas* c, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r) {
     (void)c;
+    flag("draw_rframe", x, y, w, h);
     for(int32_t i = r; i < w - r; i++) { px(x + i, y); px(x + i, y + h - 1); }
     for(int32_t j = r; j < h - r; j++) { px(x, y + j); px(x + w - 1, y + j); }
 }
 
 void canvas_draw_line(Canvas* c, int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     (void)c;
+    flag("draw_line", x1 < x2 ? x1 : x2, y1 < y2 ? y1 : y2, 0, 0);
     int32_t dx = x2 - x1, dy = y2 - y1;
     int32_t steps = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
     if(steps == 0) { px(x1, y1); return; }
@@ -105,7 +126,11 @@ void canvas_draw_line(Canvas* c, int32_t x1, int32_t y1, int32_t x2, int32_t y2)
         px(x1 + dx * i / steps, y1 + dy * i / steps);
 }
 
-void canvas_draw_dot(Canvas* c, int32_t x, int32_t y) { (void)c; px(x, y); }
+void canvas_draw_dot(Canvas* c, int32_t x, int32_t y) {
+    (void)c;
+    flag("draw_dot", x, y, 1, 1);
+    px(x, y);
+}
 
 void canvas_draw_str(Canvas* c, int32_t x, int32_t y, const char* s) {
     (void)c;

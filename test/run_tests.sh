@@ -12,9 +12,14 @@ trap 'rm -rf "$OUT"' EXIT
 
 echo "building..."
 $CC $CFLAGS harness.c ../game.c -lm -o "$OUT/harness"
+$CC $CFLAGS render_check.c canvas_sim.c ../game.c ../draw.c -lm -o "$OUT/render_check"
 $CC $CFLAGS screens.c canvas_sim.c ../game.c ../draw.c -lm -o "$OUT/screens"
 
 "$OUT/harness"
+
+echo
+echo "=== renderer ==="
+"$OUT/render_check"
 
 if [ "$1" = "--screens" ]; then
     "$OUT/screens"

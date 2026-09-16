@@ -3,13 +3,36 @@
  */
 #include "flips_jumps.h"
 
+/*
+ * xorshift32. The hardware RNG is a peripheral read with a busy-wait, far too
+ * slow to call from the game loop; it only seeds this.
+ */
+static uint32_t rng_state = 1;
+
+void game_seed(uint32_t seed) {
+    rng_state = seed ? seed : 1;
+}
+
+static uint32_t rnd_u32(void) {
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 17;
+    rng_state ^= rng_state << 5;
+    return rng_state;
+}
+
+/* Record an effect for the app layer to perform outside the lock. */
+static void fx_tone(GameWorld* world, float frequency, uint8_t ticks) {
+    world->fx.tone = frequency;
+    world->fx.tone_ticks = ticks;
+}
+
 static uint32_t rnd_range(uint32_t min, uint32_t max) {
     if(max <= min) return min;
-    return min + (furi_hal_random_get() % (max - min + 1));
+    return min + (rnd_u32() % (max - min + 1));
 }
 
 static float rnd_float(float min, float max) {
-    return min + (float)(furi_hal_random_get() % 1000UL) * 0.001f * (max - min);
+    return min + (float)(rnd_u32() % 1000UL) * 0.001f * (max - min);
 }
 
 static bool rnd_chance(uint32_t percent) {
@@ -200,32 +223,30 @@ static void enemy_update(GameWorld* world) {
     }
 }
 
-static void game_over(FlipsJumpsApp* app) {
-    GameWorld* world = &app->world;
+static void game_over(GameWorld* world) {
 
     world->state = GameStateOver;
     if(world->score > world->high_score) {
         world->high_score = world->score;
         world->new_record = true;
-        flips_jumps_save(app);
+        world->fx.save_request = true;
     }
 
-    sound_stop(app);
-    notification_message(app->notifications, &sequence_single_vibro);
+    world->fx.silence = true;
+    world->fx.vibro = true;
 }
 
-static void player_knocked_out(FlipsJumpsApp* app) {
-    Player* player = &app->world.player;
+static void player_knocked_out(GameWorld* world) {
+    Player* player = &world->player;
 
     player->dying = true;
     player->vy = -1.2f;
     player->vx = 0.0f;
-    sound_play(app, 110.0f, 8);
-    notification_message(app->notifications, &sequence_blink_red_100);
+    fx_tone(world, 110.0f, 8);
+    world->fx.blink = true;
 }
 
-static void player_collide_platforms(FlipsJumpsApp* app, float prev_bottom) {
-    GameWorld* world = &app->world;
+static void player_collide_platforms(GameWorld* world, float prev_bottom) {
     Player* player = &world->player;
 
     if(player->vy <= 0.0f) return;
@@ -246,26 +267,25 @@ static void player_collide_platforms(FlipsJumpsApp* app, float prev_bottom) {
             /* Crumbles away, the player drops straight through it. */
             platform->broken = true;
             platform->break_vy = 0.6f;
-            sound_play(app, 140.0f, 3);
+            fx_tone(world, 140.0f, 3);
             break;
         case PlatformTypeSpring:
             player->y = top - PLAYER_HEIGHT;
             player->vy = SPRING_VELOCITY;
             platform->spring_frame = 10;
-            sound_play(app, 1320.0f, 4);
+            fx_tone(world, 1320.0f, 4);
             break;
         default:
             player->y = top - PLAYER_HEIGHT;
             player->vy = JUMP_VELOCITY;
-            sound_play(app, 660.0f, 2);
+            fx_tone(world, 660.0f, 2);
             break;
         }
         return;
     }
 }
 
-static void player_collide_enemy(FlipsJumpsApp* app, float prev_bottom) {
-    GameWorld* world = &app->world;
+static void player_collide_enemy(GameWorld* world, float prev_bottom) {
     Player* player = &world->player;
     Enemy* enemy = &world->enemy;
 
@@ -279,14 +299,13 @@ static void player_collide_enemy(FlipsJumpsApp* app, float prev_bottom) {
         world->enemy_cooldown = 120;
         world->bonus += 50;
         player->vy = JUMP_VELOCITY * 1.15f;
-        sound_play(app, 880.0f, 4);
+        fx_tone(world, 880.0f, 4);
     } else {
-        player_knocked_out(app);
+        player_knocked_out(world);
     }
 }
 
-void game_tick(FlipsJumpsApp* app) {
-    GameWorld* world = &app->world;
+void game_tick(GameWorld* world) {
     Player* player = &world->player;
 
     world->tick++;
@@ -321,8 +340,8 @@ void game_tick(FlipsJumpsApp* app) {
     enemy_update(world);
 
     if(!player->dying) {
-        player_collide_platforms(app, prev_bottom);
-        player_collide_enemy(app, prev_bottom);
+        player_collide_platforms(world, prev_bottom);
+        player_collide_enemy(world, prev_bottom);
 
         /* The camera only ever follows upwards. */
         if(player->y - world->camera_y < CAMERA_LINE) {
@@ -336,6 +355,6 @@ void game_tick(FlipsJumpsApp* app) {
     }
 
     if(player->y - world->camera_y > (float)SCREEN_HEIGHT + 4.0f) {
-        game_over(app);
+        game_over(world);
     }
 }

@@ -2,15 +2,7 @@
 #include "flips_jumps.h"
 #include <assert.h>
 
-const NotificationSequence sequence_single_vibro = {0};
-const NotificationSequence sequence_blink_red_100 = {0};
-void notification_message(NotificationApp* a, const NotificationSequence* s) { (void)a; (void)s; }
-uint32_t furi_hal_random_get(void) { return ((uint32_t)rand() << 16) ^ (uint32_t)rand(); }
 
-static int sounds_played = 0;
-void sound_play(FlipsJumpsApp* app, float f, uint8_t t) { (void)app; (void)f; (void)t; sounds_played++; }
-void sound_stop(FlipsJumpsApp* app) { (void)app; }
-void flips_jumps_save(FlipsJumpsApp* app) { (void)app; }
 
 #define FAIL(...) do { printf("FAIL: " __VA_ARGS__); printf("\n"); failures++; } while(0)
 static int failures = 0;
@@ -29,10 +21,10 @@ typedef struct {
 } RunResult;
 
 static RunResult play(bool use_bot, uint32_t max_frames) {
-    FlipsJumpsApp app;
-    memset(&app, 0, sizeof(app));
-    game_reset(&app.world);
-    GameWorld* w = &app.world;
+    GameWorld world;
+    memset(&world, 0, sizeof(world));
+    game_reset(&world);
+    GameWorld* w = &world;
 
     Bot bot = {0};
     RunResult r = {0};
@@ -42,7 +34,7 @@ static RunResult play(bool use_bot, uint32_t max_frames) {
 
     while(w->state == GameStatePlaying && r.frames < max_frames) {
         if(use_bot) bot_input(&bot, w);
-        game_tick(&app);
+        game_tick(w);
         r.frames++;
 
         const Player* p = &w->player;
@@ -90,15 +82,15 @@ static RunResult play(bool use_bot, uint32_t max_frames) {
 }
 
 static void trace_one(void) {
-    FlipsJumpsApp app;
-    memset(&app, 0, sizeof(app));
-    game_reset(&app.world);
-    GameWorld* w = &app.world;
+    GameWorld world;
+    memset(&world, 0, sizeof(world));
+    game_reset(&world);
+    GameWorld* w = &world;
     Bot bot = {0};
     int f = 0;
     while(w->state == GameStatePlaying && f < 300) {
         bot_input(&bot, w);
-        game_tick(&app);
+        game_tick(w);
         f++;
         printf("f%-3d feetscr=%5.1f vy=%5.2f px=%5.1f dir=%2d |",
                f, (double)(w->player.y + PLAYER_HEIGHT - w->camera_y),
@@ -117,7 +109,7 @@ static void trace_one(void) {
 
 int main(int argc, char** argv) {
     if(argc > 2) { srand(atoi(argv[2])); trace_one(); return 0; }
-    srand(1234);
+    game_seed(1234);
 
     (void)argc; (void)argv;
     printf("=== physics ===\n");
@@ -158,7 +150,6 @@ int main(int argc, char** argv) {
     printf("runs where an enemy appeared: %d/40\n", enemies);
     printf("largest on-screen platform gap: %d px (hop clears %.0f)\n", max_gap, (double)hop);
     printf("fewest platforms on screen at once: %d\n", min_visible);
-    printf("sound cues triggered: %d\n", sounds_played);
 
     if(scores[20] == 0) FAIL("median bot score is zero; the game is unplayable");
     if(quick_deaths > 4) FAIL("%u/40 runs died almost immediately", quick_deaths);
@@ -170,17 +161,17 @@ int main(int argc, char** argv) {
     printf("\n=== platform mix (10k spawns at rising difficulty) ===\n");
     {
         int seen[4] = {0};
-        FlipsJumpsApp a;
-        memset(&a, 0, sizeof(a));
-        game_reset(&a.world);
-        GameWorld* gw = &a.world;
+        GameWorld mix;
+        memset(&mix, 0, sizeof(mix));
+        game_reset(&mix);
+        GameWorld* gw = &mix;
         int fragile_pairs = 0;
         for(int i = 0; i < 10000; i++) {
             gw->score = (uint32_t)i / 8; /* sweep the whole difficulty curve */
             /* Force a recycle of platform 0 by dropping it below the screen. */
             gw->platforms[0].y = gw->camera_y + SCREEN_HEIGHT + 20.0f;
             PlatformType before_fragile = gw->last_was_fragile ? PlatformTypeBreakable : PlatformTypeNormal;
-            game_tick(&a);
+            game_tick(gw);
             PlatformType t = gw->platforms[0].type;
             seen[t]++;
             if(t == PlatformTypeBreakable && before_fragile == PlatformTypeBreakable) fragile_pairs++;

@@ -3,29 +3,71 @@
  */
 #include "flips_jumps.h"
 
+/*
+ * Every primitive goes through these. The Flipper passes coordinates on to
+ * u8g2, whose coordinate type is unsigned, so a negative value is not clipped
+ * away - it becomes ~65535 and the shape gets painted somewhere it should not,
+ * which is what streaks a stripe across the display. Clip here so nothing
+ * out of range ever reaches the canvas.
+ */
+static void fill_rect(Canvas* canvas, int32_t x, int32_t y, int32_t w, int32_t h) {
+    if(x < 0) {
+        w += x;
+        x = 0;
+    }
+    if(y < 0) {
+        h += y;
+        y = 0;
+    }
+    if(x + w > SCREEN_WIDTH) w = SCREEN_WIDTH - x;
+    if(y + h > SCREEN_HEIGHT) h = SCREEN_HEIGHT - y;
+    if(w <= 0 || h <= 0) return;
+    canvas_draw_box(canvas, x, y, w, h);
+}
+
+static void put_dot(Canvas* canvas, int32_t x, int32_t y) {
+    if(x < 0 || y < 0 || x >= SCREEN_WIDTH || y >= SCREEN_HEIGHT) return;
+    canvas_draw_dot(canvas, x, y);
+}
+
+/* Rounded only when it fits; at the screen edge square corners are invisible. */
+static void fill_rrect(Canvas* canvas, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r) {
+    if(x >= 0 && y >= 0 && x + w <= SCREEN_WIDTH && y + h <= SCREEN_HEIGHT) {
+        canvas_draw_rbox(canvas, x, y, w, h, r);
+        return;
+    }
+    fill_rect(canvas, x, y, w, h);
+}
+
+static void frame_rrect(Canvas* canvas, int32_t x, int32_t y, int32_t w, int32_t h, int32_t r) {
+    if(x >= 0 && y >= 0 && x + w <= SCREEN_WIDTH && y + h <= SCREEN_HEIGHT) {
+        canvas_draw_rframe(canvas, x, y, w, h, r);
+    }
+}
+
 static void draw_player_sprite(Canvas* canvas, int32_t x, int32_t y, bool facing_left, bool dying) {
     /* Body. */
-    canvas_draw_rbox(canvas, x, y + 1, PLAYER_WIDTH, 7, 2);
+    fill_rrect(canvas, x, y + 1, PLAYER_WIDTH, 7, 2);
 
     /* Feet. */
-    canvas_draw_box(canvas, x + 1, y + 8, 2, 1);
-    canvas_draw_box(canvas, x + 6, y + 8, 2, 1);
+    fill_rect(canvas, x + 1, y + 8, 2, 1);
+    fill_rect(canvas, x + 6, y + 8, 2, 1);
 
     /* Snout, pointing where we are heading. */
-    canvas_draw_dot(canvas, facing_left ? x - 1 : x + PLAYER_WIDTH, y + 4);
+    put_dot(canvas, facing_left ? x - 1 : x + PLAYER_WIDTH, y + 4);
 
     /* Eyes punched out of the body. */
     canvas_set_color(canvas, ColorWhite);
     if(dying) {
-        canvas_draw_dot(canvas, x + 2, y + 3);
-        canvas_draw_dot(canvas, x + 4, y + 3);
-        canvas_draw_dot(canvas, x + 3, y + 4);
-        canvas_draw_dot(canvas, x + 2, y + 5);
-        canvas_draw_dot(canvas, x + 4, y + 5);
-        canvas_draw_dot(canvas, x + 6, y + 4);
+        put_dot(canvas, x + 2, y + 3);
+        put_dot(canvas, x + 4, y + 3);
+        put_dot(canvas, x + 3, y + 4);
+        put_dot(canvas, x + 2, y + 5);
+        put_dot(canvas, x + 4, y + 5);
+        put_dot(canvas, x + 6, y + 4);
     } else {
-        canvas_draw_box(canvas, facing_left ? x + 1 : x + 4, y + 3, 2, 2);
-        canvas_draw_box(canvas, facing_left ? x + 4 : x + 6, y + 3, 1, 2);
+        fill_rect(canvas, facing_left ? x + 1 : x + 4, y + 3, 2, 2);
+        fill_rect(canvas, facing_left ? x + 4 : x + 6, y + 3, 1, 2);
     }
     canvas_set_color(canvas, ColorBlack);
 }
@@ -48,17 +90,17 @@ static void draw_spring(Canvas* canvas, int32_t x, int32_t y, bool compressed) {
     int32_t sx = x + (PLATFORM_WIDTH - 6) / 2;
 
     if(compressed) {
-        canvas_draw_box(canvas, sx, y - 3, 6, 2);
-        canvas_draw_box(canvas, sx, y - 1, 5, 1);
+        fill_rect(canvas, sx, y - 3, 6, 2);
+        fill_rect(canvas, sx, y - 1, 5, 1);
         return;
     }
 
     /* Top plate. */
-    canvas_draw_box(canvas, sx, y - 7, 6, 2);
+    fill_rect(canvas, sx, y - 7, 6, 2);
     /* Coil: rows stepped left and right to read as a wound spring, running
        all the way down to the pad so it does not float above it. */
     for(int32_t i = 0; i < 5; i++) {
-        canvas_draw_box(canvas, sx + (i % 2), y - 5 + i, 5, 1);
+        fill_rect(canvas, sx + (i % 2), y - 5 + i, 5, 1);
     }
 }
 
@@ -70,35 +112,35 @@ static void draw_platform(Canvas* canvas, const Platform* platform, float camera
 
     if(platform->broken) {
         /* Crumbled: two halves tumbling away. */
-        canvas_draw_line(canvas, x, y, x + 5, y);
-        canvas_draw_line(canvas, x + 9, y + 1, x + PLATFORM_WIDTH - 1, y + 1);
+        fill_rect(canvas, x, y, 6, 1);
+        fill_rect(canvas, x + 9, y + 1, PLATFORM_WIDTH - 9, 1);
         return;
     }
 
     switch(platform->type) {
     case PlatformTypeBreakable:
         /* Hollow and dotted: it will not hold your weight. */
-        canvas_draw_line(canvas, x, y, x + PLATFORM_WIDTH - 1, y);
+        fill_rect(canvas, x, y, PLATFORM_WIDTH, 1);
         for(int32_t i = 0; i < PLATFORM_WIDTH; i += 3) {
-            canvas_draw_dot(canvas, x + i, y + 2);
+            put_dot(canvas, x + i, y + 2);
         }
         break;
 
     case PlatformTypeMoving:
-        canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
+        fill_rect(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
         canvas_set_color(canvas, ColorWhite);
-        canvas_draw_line(canvas, x + 4, y, x + 4, y + PLATFORM_HEIGHT - 1);
-        canvas_draw_line(canvas, x + 10, y, x + 10, y + PLATFORM_HEIGHT - 1);
+        fill_rect(canvas, x + 4, y, 1, PLATFORM_HEIGHT);
+        fill_rect(canvas, x + 10, y, 1, PLATFORM_HEIGHT);
         canvas_set_color(canvas, ColorBlack);
         break;
 
     case PlatformTypeSpring:
-        canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
+        fill_rect(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
         draw_spring(canvas, x, y, platform->spring_frame != 0);
         break;
 
     default:
-        canvas_draw_box(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
+        fill_rect(canvas, x, y, PLATFORM_WIDTH, PLATFORM_HEIGHT);
         break;
     }
 }
@@ -111,19 +153,21 @@ static void draw_enemy(Canvas* canvas, const Enemy* enemy, float camera_y, uint3
     if(y < -ENEMY_HEIGHT || y > SCREEN_HEIGHT) return;
 
     /* Antennae. */
-    canvas_draw_line(canvas, x + 2, y + 2, x + 1, y);
-    canvas_draw_line(canvas, x + 8, y + 2, x + 9, y);
+    put_dot(canvas, x + 2, y + 1);
+    put_dot(canvas, x + 1, y);
+    put_dot(canvas, x + 8, y + 1);
+    put_dot(canvas, x + 9, y);
 
-    canvas_draw_rbox(canvas, x, y + 2, ENEMY_WIDTH, 6, 2);
+    fill_rrect(canvas, x, y + 2, ENEMY_WIDTH, 6, 2);
 
     /* Flapping wings. */
     int32_t flap = (tick / 4) % 2;
-    canvas_draw_line(canvas, x - 1, y + 3 + flap, x - 1, y + 5);
-    canvas_draw_line(canvas, x + ENEMY_WIDTH, y + 3 + flap, x + ENEMY_WIDTH, y + 5);
+    fill_rect(canvas, x - 1, y + 3 + flap, 1, 3 - flap);
+    fill_rect(canvas, x + ENEMY_WIDTH, y + 3 + flap, 1, 3 - flap);
 
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, x + 2, y + 4, 2, 2);
-    canvas_draw_box(canvas, x + 7, y + 4, 2, 2);
+    fill_rect(canvas, x + 2, y + 4, 2, 2);
+    fill_rect(canvas, x + 7, y + 4, 2, 2);
     canvas_set_color(canvas, ColorBlack);
 }
 
@@ -144,20 +188,19 @@ static void draw_hud(Canvas* canvas, const GameWorld* world) {
     uint16_t width = canvas_string_width(canvas, buffer);
 
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_box(canvas, 0, 0, width + 5, 11);
+    fill_rect(canvas, 0, 0, width + 5, 11);
     canvas_set_color(canvas, ColorBlack);
     canvas_draw_str(canvas, 2, 9, buffer);
 }
 
 static void draw_dialog(Canvas* canvas, int32_t x, int32_t y, int32_t width, int32_t height) {
     canvas_set_color(canvas, ColorWhite);
-    canvas_draw_rbox(canvas, x, y, width, height, 3);
+    fill_rrect(canvas, x, y, width, height, 3);
     canvas_set_color(canvas, ColorBlack);
-    canvas_draw_rframe(canvas, x, y, width, height, 3);
+    frame_rrect(canvas, x, y, width, height, 3);
 }
 
-static void draw_menu(Canvas* canvas, FlipsJumpsApp* app) {
-    const GameWorld* world = &app->world;
+static void draw_menu(Canvas* canvas, const GameWorld* world, bool sound_on) {
     char buffer[24];
 
     /* The title needs two lines at this width. */
@@ -172,7 +215,7 @@ static void draw_menu(Canvas* canvas, FlipsJumpsApp* app) {
     /* A demo hop over a platform, ping-ponging through a 40 frame cycle. */
     int32_t phase = (int32_t)(world->tick % 40);
     int32_t height = phase < 20 ? phase : 40 - phase;
-    canvas_draw_box(canvas, 32 - PLATFORM_WIDTH / 2, 82, PLATFORM_WIDTH, PLATFORM_HEIGHT);
+    fill_rect(canvas, 32 - PLATFORM_WIDTH / 2, 82, PLATFORM_WIDTH, PLATFORM_HEIGHT);
     draw_player_sprite(canvas, 32 - PLAYER_WIDTH / 2, 72 - height, false, false);
 
     if((world->tick / 12) % 2 == 0) {
@@ -180,7 +223,7 @@ static void draw_menu(Canvas* canvas, FlipsJumpsApp* app) {
     }
     canvas_draw_str_aligned(canvas, 32, 113, AlignCenter, AlignCenter, "< > MOVE");
     canvas_draw_str_aligned(
-        canvas, 32, 123, AlignCenter, AlignCenter, app->sound_on ? "UP:SND ON" : "UP:SND OFF");
+        canvas, 32, 123, AlignCenter, AlignCenter, sound_on ? "UP:SND ON" : "UP:SND OFF");
 }
 
 static void draw_paused(Canvas* canvas) {
@@ -219,14 +262,12 @@ static void draw_game_over(Canvas* canvas, const GameWorld* world) {
     canvas_draw_str_aligned(canvas, 32, 111, AlignCenter, AlignCenter, "BACK:MENU");
 }
 
-void game_draw(Canvas* canvas, FlipsJumpsApp* app) {
-    GameWorld* world = &app->world;
-
+void game_draw(Canvas* canvas, const GameWorld* world, bool sound_on) {
     canvas_clear(canvas);
     canvas_set_color(canvas, ColorBlack);
 
     if(world->state == GameStateMenu) {
-        draw_menu(canvas, app);
+        draw_menu(canvas, world, sound_on);
         return;
     }
 

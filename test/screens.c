@@ -1,16 +1,9 @@
 #include "flips_jumps.h"
-const NotificationSequence sequence_single_vibro = {0};
-const NotificationSequence sequence_blink_red_100 = {0};
-void notification_message(NotificationApp* a, const NotificationSequence* s) { (void)a; (void)s; }
-uint32_t furi_hal_random_get(void) { return ((uint32_t)rand() << 16) ^ (uint32_t)rand(); }
-void sound_play(FlipsJumpsApp* a, float f, uint8_t t) { (void)a; (void)f; (void)t; }
-void sound_stop(FlipsJumpsApp* a) { (void)a; }
-void flips_jumps_save(FlipsJumpsApp* a) { (void)a; }
 void screen_dump(const char* title);
 #include "bot.h"
 
 int main(void) {
-    srand(9);
+    game_seed(9);
     FlipsJumpsApp app;
     memset(&app, 0, sizeof(app));
     app.sound_on = true;
@@ -19,7 +12,7 @@ int main(void) {
     app.world.state = GameStateMenu;
     app.world.high_score = 1284;
     app.world.tick = 8;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("MENU");
 
     /* Play until a spring, a crumbler and an enemy are all on screen. */
@@ -28,7 +21,7 @@ int main(void) {
     int best_frame = -1, best_types = -1;
     for(int f = 0; f < 4000 && app.world.state == GameStatePlaying; f++) {
         bot_input(&bot, &app.world);
-        game_tick(&app);
+        game_tick(&app.world);
         int types = 0;
         for(int i = 0; i < PLATFORM_COUNT; i++) {
             Platform* p = &app.world.platforms[i];
@@ -43,18 +36,18 @@ int main(void) {
         if(score > best_types) { best_types = score; best_frame = f; }
     }
 
-    srand(9);
+    game_seed(9);
     game_reset(&app.world);
     memset(&bot, 0, sizeof(bot));
     for(int f = 0; f <= best_frame && app.world.state == GameStatePlaying; f++) {
         bot_input(&bot, &app.world);
-        game_tick(&app);
+        game_tick(&app.world);
     }
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("IN GAME (score, platforms, player)");
 
     app.world.state = GameStatePaused;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("PAUSED");
 
     app.world.state = GameStateOver;
@@ -62,13 +55,13 @@ int main(void) {
     app.world.high_score = 4021;
     app.world.new_record = false;
     app.world.tick = 5;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("GAME OVER");
 
     app.world.new_record = true;
     app.world.high_score = 1337;
     app.world.tick = 0;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("GAME OVER (new record)");
 
     /* A reference sheet of every sprite, side by side. */
@@ -89,7 +82,7 @@ int main(void) {
     w->player.x = 6; w->player.y = 90; w->player.vy = 2.0f; w->player.facing_left = false;
     w->enemy.active = true; w->enemy.x = 34; w->enemy.y = 90;
 
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("SPRITES: normal / moving / breakable / spring   +broken, compressed spring, player, enemy");
 
     /* Player wrapping across the screen edge, and the knocked-out face. */
@@ -98,11 +91,11 @@ int main(void) {
     w->platforms[0] = (Platform){.x = 0, .y = 60, .type = PlatformTypeNormal};
     w->player.x = 60; w->player.y = 18; w->player.dying = false;
     w->enemy.active = false;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("PLAYER WRAPPING THE RIGHT EDGE");
 
     w->player.x = 28; w->player.dying = true;
-    game_draw(NULL, &app);
+    game_draw(NULL, &app.world, app.sound_on);
     screen_dump("KNOCKED OUT (X eyes)");
 
     return 0;
